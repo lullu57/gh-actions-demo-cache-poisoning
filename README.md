@@ -1,6 +1,8 @@
 # Demo: Cache Poisoning → Real npm Publish
 
-This is the **flagship demo** in the [supply-chain attack series](../gh-actions-supply-chain-demo). It is the only demo in the set that publishes a malicious version to **real public npm** by way of the attack chain. Audience members can `npm install` the package and execute the payload.
+This is the **flagship demo** in a series of eight GitHub Actions supply-chain attack reproductions. It is the only demo in the set that publishes a malicious version to **real public npm** by way of the attack chain. Audience members can `npm install` the package and execute the payload.
+
+The other seven companion demos (script injection, `pull_request_target`, mutable action tags, credential leaks, `workflow_dispatch`, build-input compromise, self-hosted runner takeover) currently live in private repos.
 
 The headline: **no credential is stolen. No maintainer is compromised. A stranger's PR — closed without merging — causes a future innocent push to `main` to publish a malicious release.**
 

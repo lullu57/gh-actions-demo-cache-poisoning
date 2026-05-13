@@ -80,7 +80,7 @@ Symmetric to the bundle-size change. The release workflow only restores caches w
 
 The original workflow runs `npm install`, `npm build`, and `npm publish` all in one job that has `id-token: write`. Any code execution during install or build can mint a publish token.
 
-The safe version runs install + build in a job with **no** `id-token: write`. The build's output (the `dist/` directory) is uploaded as an artifact. A second job downloads the artifact and publishes it. The publish job has `id-token: write` but does no `npm install` and no `npm run build` — its only attack surface is the actions it uses, which should be SHA-pinned (see [`gh-actions-demo-mutable-action-tag`](../gh-actions-demo-mutable-action-tag)).
+The safe version runs install + build in a job with **no** `id-token: write`. The build's output (the `dist/` directory) is uploaded as an artifact. A second job downloads the artifact and publishes it. The publish job has `id-token: write` but does no `npm install` and no `npm run build` — its only attack surface is the actions it uses, which should be SHA-pinned (mutable action tags are a separate attack class documented in a companion demo).
 
 **What you lose:** workflow runs are slightly longer due to artifact upload/download. ~30 seconds. Worth it.
 
