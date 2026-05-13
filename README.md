@@ -1,12 +1,55 @@
-# Demo: Cache Poisoning → Real npm Publish
+# cache-poisoning-pwn-demo
 
-This is the **flagship demo** in a series of eight GitHub Actions supply-chain attack reproductions. It is the only demo in the set that publishes a malicious version to **real public npm** by way of the attack chain. Audience members can `npm install` the package and execute the payload.
+> **⚠️ Educational demo, do NOT use in production.** Installing this package opens Calculator (or your platform's equivalent) on your machine. That's the point — it demonstrates a real supply-chain attack against npm packages built with GitHub Actions.
+>
+> Published to npm: [`cache-poisoning-pwn-demo`](https://www.npmjs.com/package/cache-poisoning-pwn-demo)
 
-The other seven companion demos (script injection, `pull_request_target`, mutable action tags, credential leaks, `workflow_dispatch`, build-input compromise, self-hosted runner takeover) currently live in private repos.
+## What this repo is
 
-The headline: **no credential is stolen. No maintainer is compromised. A stranger's PR — closed without merging — causes a future innocent push to `main` to publish a malicious release.**
+A faithfully-reproducible cache-poisoning attack against an npm package's CI/CD pipeline, modeled on the [May 2026 TanStack npm supply-chain compromise](https://tanstack.com/blog/npm-supply-chain-compromise-postmortem). The package is real, published to public npm, and the attack chain runs end-to-end on GitHub Actions infrastructure.
 
-This is a faithful reproduction of the [TanStack npm supply-chain compromise](https://tanstack.com/blog/npm-supply-chain-compromise-postmortem) (May 2026) using a package we control.
+**The point in one sentence:** no credential is stolen, no maintainer is compromised, and a stranger's pull request — *closed without merging* — causes the maintainer's *own* CI to publish a malicious release on the next innocent push to `main`. The published version is signed with **npm provenance attestation**, which is the modern "trust me, this came from a real workflow" stamp; the attestation is correctly issued and verifiable, because the attack works *inside* the trusted workflow, not by stealing its keys.
+
+## Why this repo exists
+
+To make this attack class touchable. Reading [the TanStack postmortem](https://tanstack.com/blog/npm-supply-chain-compromise-postmortem) communicates the shape; running this demo communicates the *speed* and the *invisibility*. Audiences who watch the malicious version appear on the npm UI seconds after an innocuous `git push` rarely forget the demo.
+
+It also serves as a **shareable reference** for engineers who need to harden their own publishing pipelines: every link in the unsafe chain has a paired safe alternative in [`fix/`](fix/README.md), and every "bad practice" has an empathy note in [`why/README.md`](why/README.md) explaining the legitimate engineering reason it was tempting.
+
+## If you found this organically (via npm, search, or a colleague)
+
+- The package on npm is real. Installing it triggers the educational payload (opens Calculator + prints a marker message). It does not exfiltrate, persist, or do anything other than open a GUI app.
+- This is **not a typosquat** of any popular package — the name `cache-poisoning-pwn-demo` is intentionally demo-flagged.
+- If you maintain an npm package built with GitHub Actions, read [`fix/README.md`](fix/README.md) — the three workflow-level changes there make this attack class structurally impossible.
+- If you consume npm packages in CI, the single most-effective consumer-side defense is `npm config set minimum-release-age 10080` — read the [hardening section](#consumer-side-mitigation) below.
+
+## The attack in one diagram
+
+```
+Attacker fork PR (or any same-repo branch from a write-access account)
+    │
+    ▼
+.github/workflows/vulnerable-bundle-size.yml
+    │  (triggers on pull_request_target → runs in BASE repo trust context)
+    │  (checks out PR HEAD; runs npm install → fires attacker's prepare hook)
+    │  (caches node_modules — INCLUDING the poisoned is-number/index.js)
+    ▼
+[ shared GitHub Actions cache key: nm-<hash-of-package-lock.json> ]
+    │  cache persists even after PR is closed
+    ▼
+Any future push to main (a typo fix, a Dependabot bump, anything)
+    │
+    ▼
+.github/workflows/vulnerable-release.yml
+    │  (restores the poisoned cache; runs build; bundles poisoned is-number into dist/postinstall.js)
+    │  (mints OIDC token; publishes v0.1.N with provenance attestation)
+    ▼
+npm registry: cache-poisoning-pwn-demo@0.1.N is now MALICIOUS
+    │
+    ▼
+Anyone running `npm install cache-poisoning-pwn-demo`
+    → postinstall executes → calculator opens → "[supply-chain-demo] supply-chain attack PoC triggered."
+```
 
 ---
 
@@ -102,6 +145,24 @@ Three independent changes, each addressing one link in the chain:
 3. `npm ci --ignore-scripts` + split build/publish jobs. Even if a dep is compromised, its code can't reach `id-token: write`.
 
 See [`fix/README.md`](fix/README.md).
+
+## Consumer-side mitigation
+
+The single most-effective defense against this attack class — from the consumer side — is to refuse to install package versions that were published very recently. npm 10+ supports this natively:
+
+```bash
+npm config set minimum-release-age 10080    # 7 days, in minutes
+```
+
+With this set, a malicious version published via the cache-poisoning chain has 7 days for someone to detect and unpublish before any consumer's CI actually installs it. Combined with `npm audit` / `osv-scanner` in CI, this catches most known-compromise scenarios cleanly.
+
+Note: to install **this demo package** despite this setting, append `--minimum-release-age=0` to the install command — it's a per-invocation override that doesn't touch your default config.
+
+## How the demo workflow publishes without a token
+
+The release workflow uses **npm OIDC trusted publishing** — no `NPM_TOKEN` secret is set anywhere. GitHub Actions mints a short-lived JWT, npm verifies it against the package's trusted-publisher config, and `npm publish` succeeds. The provenance attestation is signed by Sigstore.
+
+This is the modern, recommended publishing pattern, used by major OSS projects. The demo's point is that this modernization does *not* save you from cache poisoning — if the attacker gets their bytes into the publish job's `dist/`, they get the registry's blessing for free.
 
 ---
 
