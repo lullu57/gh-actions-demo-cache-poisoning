@@ -1,0 +1,88 @@
+# SAFE: release workflow
+#
+# Three changes from the vulnerable version:
+#
+# 1. Cache key is scoped with `release-` prefix so it cannot collide with
+#    PR-triggered caches. PR runs and release runs use disjoint cache
+#    namespaces.
+#
+# 2. `npm ci --ignore-scripts` during install. Lifecycle scripts from
+#    dependencies do not run during the install step. Build still happens
+#    after, but it runs the local repo's build script (which we own and
+#    review), not arbitrary dependency code.
+#
+# 3. The publish step runs in a separate job that depends on a verified
+#    build, with `id-token: write` scoped to only that job.
+#
+# Together these mean: even if a dependency is compromised, its
+# postinstall does not run with id-token: write in scope. Even if cache
+# from an untrusted source somehow appeared, it would be a cache miss
+# (different key) and would be re-resolved from the lockfile.
+
+name: release (SAFE)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read   # build job has no id-token, no write anywhere
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Restore cache (scoped to release)
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-release-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install dependencies (no lifecycle scripts)
+        # --ignore-scripts blocks postinstall, preinstall, install, etc.
+        # for all dependencies. Combined with `npm ci`, this means deps
+        # cannot run code during the install phase.
+        run: npm ci --ignore-scripts
+
+      - name: Build
+        run: npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # the prize, scoped to ONE job that only does publish
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to npm (OIDC trusted publishing)
+        run: npm publish --provenance --access public
+        # No npm install in this job. No build. Only download + publish.
+        # The attack surface for code execution in this job is just the
+        # actions used above, which we'd pin by SHA in a real production
+        # workflow (see gh-actions-demo-mutable-action-tag).

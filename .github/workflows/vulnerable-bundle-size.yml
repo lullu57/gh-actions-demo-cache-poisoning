@@ -1,0 +1,64 @@
+# VULNERABLE: bundle-size workflow
+#
+# This is the bait. It looks helpful — comments bundle size on PRs.
+# The vulnerabilities:
+#   1. pull_request_target runs in BASE repo trust context (with write GITHUB_TOKEN
+#      so we can comment on the PR).
+#   2. We explicitly check out the PR's head SHA so the bundle size we report
+#      reflects the proposed change. This loads attacker-controlled code.
+#   3. `npm install` runs postinstall scripts from the attacker's package.json.
+#   4. We cache node_modules under a key that the release workflow also uses,
+#      so whatever the postinstall planted will be restored on `main` pushes.
+#
+# Every one of these is a normal, reasonable engineering choice in isolation.
+# Together they let any fork PR publish your next release.
+
+name: bundle-size (VULNERABLE)
+
+on:
+  pull_request_target:
+    branches: [main]
+
+permissions:
+  contents: read       # Note: this does NOT block cache writes.
+  pull-requests: write # so we can post the bundle-size comment
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the PR's proposed code
+        # VULNERABILITY: this is the line that loads attacker code into a workflow
+        # that runs with the base repo's trust context.
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Restore cached node_modules
+        # VULNERABILITY: shared cache key with the release workflow.
+        # Cache key is `node-modules-<lockfile hash>`, computed from the
+        # *attacker's* lockfile if they changed it. Even without changing the
+        # lockfile, the cache *write* below contaminates the shared store.
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install dependencies
+        # VULNERABILITY: this runs attacker's postinstall script from
+        # package.json, with the cache mounted and writable.
+        run: npm install
+
+      - name: Build (records bundle size)
+        run: npm run build
+
+      - name: Comment bundle size on PR
+        run: |
+          SIZE=$(wc -c < dist/index.js | tr -d ' ')
+          echo "bundle size: ${SIZE} bytes"
+          # In a real workflow this would post via the GH API using GITHUB_TOKEN.

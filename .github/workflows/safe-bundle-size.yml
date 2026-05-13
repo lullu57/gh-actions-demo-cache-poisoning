@@ -1,0 +1,69 @@
+# SAFE: bundle-size workflow
+#
+# Three changes from the vulnerable version:
+#
+# 1. Trigger is `pull_request`, not `pull_request_target`. Fork PRs now run
+#    in the fork's trust context, with a read-only GITHUB_TOKEN and no
+#    access to repo secrets.
+#
+# 2. We do NOT write to a cache that the release workflow can restore.
+#    The cache key is scoped to the trigger so PR runs and main runs use
+#    disjoint cache namespaces.
+#
+# 3. The PR-comment step is moved to a SEPARATE workflow that triggers on
+#    `workflow_run` completion of this one — so the privileged
+#    comment-posting code never sees the PR's content. (Pattern documented
+#    by GitHub Security Lab.)
+#
+# Tradeoff: this workflow can no longer comment on the PR directly. A
+# separate workflow (not in this demo for brevity) handles that, reading
+# only the size number this workflow exported as an artifact.
+
+name: bundle-size (SAFE)
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        # No `ref:` override. The default for `pull_request` is already the
+        # PR's merge ref, which is fine — we're in the FORK's trust context.
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Restore cache (scoped to event type)
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          # Cache key includes the event name so PR-write and main-write
+          # caches never collide.
+          key: node-modules-pr-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install dependencies
+        # postinstall scripts still run, but they only have the fork's
+        # read-only GITHUB_TOKEN and no secrets. Compromise here can't
+        # publish anything.
+        run: npm ci --ignore-scripts=false
+
+      - name: Build
+        run: npm run build
+
+      - name: Export bundle size as artifact (for the comment workflow)
+        run: |
+          SIZE=$(wc -c < dist/index.js | tr -d ' ')
+          mkdir -p artifact
+          echo "{\"size\": ${SIZE}, \"pr\": ${{ github.event.pull_request.number }}}" > artifact/size.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-size
+          path: artifact/

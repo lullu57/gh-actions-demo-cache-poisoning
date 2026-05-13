@@ -1,0 +1,10 @@
+{
+  "name": "demo-cache-poisoning-target",
+  "version": "0.1.0",
+  "description": "Tiny target package used to demo the cache-poisoning attack. Do not publish.",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "mkdir -p dist && cp src/index.js dist/index.js"
+  }
+}

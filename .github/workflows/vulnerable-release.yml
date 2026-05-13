@@ -1,0 +1,59 @@
+# VULNERABLE: release workflow
+#
+# This is the detonator. It runs on every push to main and "publishes" the
+# package. To be fast, it restores the cached node_modules from the bundle-size
+# workflow. To be modern, it uses npm OIDC trusted publishing (no static token).
+#
+# The vulnerability is not in this file's syntax — every line here is the
+# GitHub-recommended way to do trusted publishing. The vulnerability is that
+# this workflow's cache is *shared with PR-triggered runs*, so a malicious PR
+# can plant code in node_modules that this workflow then executes with
+# `id-token: write` in scope.
+
+name: release (VULNERABLE)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write   # for npm OIDC trusted publishing — this is the prize
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Restore cached node_modules
+        # VULNERABILITY: this is where the poison lands. The cache was written
+        # by the bundle-size workflow, which ran fork-PR code. If that code
+        # planted a malicious file inside node_modules (e.g. as a hijacked
+        # transitive dep's index.js), this step now places it on disk with
+        # write authority to the cache.
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install (if cache miss) or verify cached
+        run: npm install
+
+      - name: Build
+        # VULNERABILITY: any of the build scripts that walk node_modules
+        # (esbuild, rollup, webpack, vite, swc) load JS from disk. The
+        # attacker's planted JS executes here, in this workflow, with
+        # id-token: write in scope. That's all it needs.
+        run: npm run build
+
+      - name: Publish to npm (via OIDC trusted publishing)
+        run: npm publish --provenance --access public
+        # No NPM_TOKEN. No PYPI_TOKEN. No GH_TOKEN. The attacker doesn't need
+        # any of them — they get to run code inside this job, which is itself
+        # the publishing authority.
