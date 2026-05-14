@@ -18,13 +18,13 @@ The cache eviction is load-bearing: `actions/cache@v4` only *saves* on a cache m
 
 ## Act 1 — set the scene (~90 sec)
 
-1. Open `https://www.npmjs.com/package/<your-package>`. Show v0.1.0. Read the description. "This is just a tiny utility package I published last week."
+1. Open `https://www.npmjs.com/package/cache-poisoning-pwn-demo`. Show v0.1.0. Read the description. "This is just a tiny utility package I published last week."
 
 2. In a terminal:
 
    ```bash
    cd /tmp && mkdir consumer && cd consumer && npm init -y >/dev/null
-   npm install <your-package> --minimum-release-age=0
+   npm install cache-poisoning-pwn-demo --minimum-release-age=0
    ```
 
    The `--minimum-release-age=0` flag is a per-invocation override. Some environments (including yours, if `npm config get minimum-release-age` returns >0) refuse to install package versions younger than that age. The flag bypasses it without changing your default config.
@@ -82,7 +82,7 @@ The cache eviction is load-bearing: `actions/cache@v4` only *saves* on a cache m
 
     Talk through what's happening: "The workflow is restoring the cache that the attacker's PR wrote. The build step is bundling the poisoned `is-number` into `dist/postinstall.js`. In about 30 seconds, npm will host a malicious v0.1.1 of this package, published with provenance from this repo, attested by GitHub."
 
-13. Workflow completes. Refresh `https://www.npmjs.com/package/<your-package>`. v0.1.1 appears. Check the provenance badge — it's there. **The malicious version has a valid SLSA attestation.**
+13. Workflow completes. Refresh `https://www.npmjs.com/package/cache-poisoning-pwn-demo`. v0.1.1 appears. Check the provenance badge — it's there. **The malicious version has a valid SLSA attestation.**
 
 ---
 
@@ -92,7 +92,7 @@ The cache eviction is load-bearing: `actions/cache@v4` only *saves* on a cache m
 
     ```bash
     cd /tmp && mkdir -p consumer-v2 && cd consumer-v2 && npm init -y >/dev/null
-    npm install <your-package> --minimum-release-age=0
+    npm install cache-poisoning-pwn-demo --minimum-release-age=0
     ```
 
     The `--minimum-release-age=0` flag is per-invocation only — it bypasses the recently-published-protection without changing the audience's default config. Most audiences won't have `minimum-release-age` set at all, but including the flag makes the demo robust regardless.
@@ -114,7 +114,7 @@ The cache eviction is load-bearing: `actions/cache@v4` only *saves* on a cache m
 16. **Reveal.** Open the npm tarball:
 
     ```bash
-    curl -s -L $(npm view <your-package>@0.1.1 dist.tarball) | tar xz -O package/dist/postinstall.js | head -50
+    curl -s -L $(npm view cache-poisoning-pwn-demo@0.1.1 dist.tarball) | tar xz -O package/dist/postinstall.js | head -50
     ```
 
     Audience sees the bundled malicious code inside the published artifact. Highlight: this is the file that opened their calculator. It was bundled by the maintainer's own workflow. The maintainer never wrote a malicious line of code. The maintainer's npm token was never stolen.
@@ -136,9 +136,9 @@ The cache eviction is load-bearing: `actions/cache@v4` only *saves* on a cache m
 After the demo:
 
 ```bash
-npm unpublish <your-package> --force
+npm unpublish cache-poisoning-pwn-demo --force
 # or version by version:
-npm unpublish <your-package>@0.1.1
+npm unpublish cache-poisoning-pwn-demo@0.1.1
 ```
 
 And delete the malicious branch on the attacker fork.
@@ -161,7 +161,7 @@ npm install
 
 **`npm publish` fails with "version already exists".** A previous demo run left the version. Either unpublish or bump again. The workflow does `npm version patch` so subsequent pushes auto-increment.
 
-**Calculator doesn't open on audience machine.** Some firewall/sandbox blocks `child_process.exec`. Have them run the payload directly: `node -e "$(npm view <your-package>@0.1.1 dist.tarball ...)"`. Or just show the bundled source.
+**Calculator doesn't open on audience machine.** Some firewall/sandbox blocks `child_process.exec`. Have them run the payload directly: `node -e "$(npm view cache-poisoning-pwn-demo@0.1.1 dist.tarball ...)"`. Or just show the bundled source.
 
 **`npm install` fails with `ENOVERSIONS`.** The audience member has `minimum-release-age` set (npm 10+ defensive feature, increasingly common in security-conscious orgs). Tell them to add `--minimum-release-age=0` to the install command. This is a per-invocation override and doesn't change their default config.
 
