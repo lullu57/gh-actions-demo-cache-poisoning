@@ -4,6 +4,16 @@ Estimated runtime: **~7 minutes** of live demo, of which ~90 seconds is waiting 
 
 Prerequisites: [`SETUP.md`](SETUP.md) completed. Two GitHub accounts ready (maintainer + attacker fork).
 
+**Before each live run, reset state** so the chain is repeatable:
+
+```bash
+# From the maintainer account's checkout:
+bash scripts/reset-demo.sh                  # evict the poisoned cache
+bash scripts/reset-demo.sh --unpublish      # also drop prior poisoned npm versions
+```
+
+The cache eviction is load-bearing: `actions/cache@v4` only *saves* on a cache miss, so if a previous run's poisoned cache is still present the new attacker PR's poisoning step gets silently discarded and the release workflow restores the *older* cache. See troubleshooting at the bottom.
+
 ---
 
 ## Act 1 — set the scene (~90 sec)
@@ -29,63 +39,56 @@ Prerequisites: [`SETUP.md`](SETUP.md) completed. Two GitHub accounts ready (main
 
 4. **Switch to the attacker GitHub account.** Open the fork in a second browser profile (or new private window).
 
-5. In a fresh terminal, clone the attacker fork:
+5. In a fresh terminal, clone the attacker fork (once per demo — re-uses the same fork across runs):
 
    ```bash
    cd /tmp
    git clone https://github.com/<attacker-account>/gh-actions-demo-cache-poisoning attacker-fork
    cd attacker-fork
-   git checkout -b docs/fix-typo
    ```
 
-6. Apply the attack files. Show the audience that this is **two lines of change** (the `prepare` hook + a new script):
+6. Apply the attack. The script creates a **fresh timestamped branch each run** (so successive demos open new PRs instead of touching the previous one), drops in `scripts/dev-hook.js`, edits one line of `package.json`, commits, and pushes:
 
    ```bash
-   bash attack/fork-changes/apply-attack.sh
-   git diff
+   bash /path/to/maintainer-checkout/attack/fork-changes/apply-attack.sh --push
+   # branch:  docs/fix-typo-<timestamp>
+   # status:  committed
+   # pushed:  origin/docs/fix-typo-<timestamp>
    ```
 
-   Audience sees:
+   Before pushing, show the audience the diff (`git show HEAD`). Two changes:
    - One line of `package.json` modified (`prepare` hook).
    - A new `scripts/dev-hook.js` file with a "build cache pre-warmup" comment.
 
-   The reviewer's eye sees: a build hook for performance. The reality: a payload planter.
+   The reviewer's eye sees a build hook for performance. The reality: a payload planter.
 
-7. Commit and push:
+7. Open the PR. The script prints the exact `gh pr create` command on success; paste it. Or via the UI: title `docs: fix typo in README`, brief body.
 
-   ```bash
-   git add -A
-   git commit -m "docs: fix typo in README"
-   git push origin docs/fix-typo
-   ```
-
-8. Open the PR via the GitHub UI. Title: `docs: fix typo in README`. Description: keep it brief.
-
-9. **Watch the bundle-size workflow run.** Click into the PR's "Checks" tab. The workflow runs `npm install` against the PR's code. The `prepare` hook plants the payload. The workflow caches `node_modules`. Workflow completes green, ~45 seconds.
+8. **Watch the bundle-size workflow run.** Click into the PR's "Checks" tab. The workflow runs `npm install` against the PR's code. The `prepare` hook plants the payload. The workflow caches `node_modules`. Workflow completes green, ~45 seconds.
 
    While it runs, talk through what's happening: "Right now the workflow is running my attacker code in the *base repo's* trust context. It's installing the package, which runs my `prepare` hook, which plants the malicious code in `node_modules/is-number/index.js`. The cache is about to be saved with that poisoned content."
 
-10. Close the PR. Don't merge. The attack doesn't need it merged.
+9. Close the PR. Don't merge. The attack doesn't need it merged.
 
 ---
 
 ## Act 3 — the detonation (~90 sec)
 
-11. **Switch back to the maintainer account.** Show that the malicious PR was closed. From the maintainer's perspective, *nothing happened* — a contributor opened a PR that didn't even get merged.
+10. **Switch back to the maintainer account.** Show that the malicious PR was closed. From the maintainer's perspective, *nothing happened* — a contributor opened a PR that didn't even get merged.
 
-12. Make any tiny change on `main`. The demo's setup: edit `README.md` in the GitHub web UI, add a single character. "Update README" commit. Click "Commit to main directly."
+11. Make any tiny change on `main`. The demo's setup: edit `README.md` in the GitHub web UI, add a single character. "Update README" commit. Click "Commit to main directly."
 
-13. **Watch the release workflow run.** Actions tab → "release (VULNERABLE)" → newest run. It restores the cache, runs `npm install` (no-op because the cache is fresh), `npm run build` bundles the poisoned `is-number` into `dist/postinstall.js`, bumps the version to v0.1.1, runs `npm publish --provenance`.
+12. **Watch the release workflow run.** Actions tab → "release (VULNERABLE)" → newest run. It restores the cache, runs `npm install` (no-op because the cache is fresh), `npm run build` bundles the poisoned `is-number` into `dist/postinstall.js`, bumps the version to v0.1.1, runs `npm publish --provenance`.
 
     Talk through what's happening: "The workflow is restoring the cache that the attacker's PR wrote. The build step is bundling the poisoned `is-number` into `dist/postinstall.js`. In about 30 seconds, npm will host a malicious v0.1.1 of this package, published with provenance from this repo, attested by GitHub."
 
-14. Workflow completes. Refresh `https://www.npmjs.com/package/<your-package>`. v0.1.1 appears. Check the provenance badge — it's there. **The malicious version has a valid SLSA attestation.**
+13. Workflow completes. Refresh `https://www.npmjs.com/package/<your-package>`. v0.1.1 appears. Check the provenance badge — it's there. **The malicious version has a valid SLSA attestation.**
 
 ---
 
 ## Act 4 — the audience pwn + retrace (~90 sec)
 
-15. **Audience invitation.** "Anyone watching, in your terminal:"
+14. **Audience invitation.** "Anyone watching, in your terminal:"
 
     ```bash
     cd /tmp && mkdir -p consumer-v2 && cd consumer-v2 && npm init -y >/dev/null
@@ -96,7 +99,7 @@ Prerequisites: [`SETUP.md`](SETUP.md) completed. Two GitHub accounts ready (main
 
     Their calculator opens. The `[supply-chain-demo]` line prints in their terminal.
 
-16. **Walk through what they just lived through.** Now retrace the chain by clicking through the actual GitHub artifacts. The URLs below are from the most recent successful chain (npm v0.1.19) — if you re-ran live in Acts 2–3, swap these for your latest PR + run URLs (`gh pr list -R lullu57/gh-actions-demo-cache-poisoning --state all` and `gh run list -R lullu57/gh-actions-demo-cache-poisoning --limit 5`):
+15. **Walk through what they just lived through.** Now retrace the chain by clicking through the actual GitHub artifacts. The URLs below are from the most recent successful chain (npm v0.1.19) — if you re-ran live in Acts 2–3, swap these for your latest PR + run URLs (`gh pr list -R lullu57/gh-actions-demo-cache-poisoning --state all` and `gh run list -R lullu57/gh-actions-demo-cache-poisoning --limit 5`):
 
     | Artifact | Purpose in the chain | URL |
     |---|---|---|
@@ -108,7 +111,7 @@ Prerequisites: [`SETUP.md`](SETUP.md) completed. Two GitHub accounts ready (main
 
     Click through each in order. The pitch: "There was no merge. There was no token theft. There was no malicious commit on `main`. There was one closed PR that wrote to a cache, and one ordinary `main` push that read from it."
 
-17. **Reveal.** Open the npm tarball:
+16. **Reveal.** Open the npm tarball:
 
     ```bash
     curl -s -L $(npm view <your-package>@0.1.1 dist.tarball) | tar xz -O package/dist/postinstall.js | head -50
@@ -120,11 +123,11 @@ Prerequisites: [`SETUP.md`](SETUP.md) completed. Two GitHub accounts ready (main
 
 ## Act 5 — the lesson (~60 sec)
 
-18. **What happened, in one breath.** No credential was stolen. No maintainer was compromised. A pull request from a stranger, that the maintainer didn't even merge, ended up publishing a malicious package version through the maintainer's own CI.
+17. **What happened, in one breath.** No credential was stolen. No maintainer was compromised. A pull request from a stranger, that the maintainer didn't even merge, ended up publishing a malicious package version through the maintainer's own CI.
 
-19. **What would have prevented it.** Switch to `safe-bundle-size.yml` and `safe-release.yml`. Three changes (`pull_request_target` → `pull_request`, cache key scoping, build/publish split). Each costs a small amount of operational complexity. Together they make this attack chain impossible.
+18. **What would have prevented it.** Switch to `safe-bundle-size.yml` and `safe-release.yml`. Three changes (`pull_request_target` → `pull_request`, cache key scoping, build/publish split). Each costs a small amount of operational complexity. Together they make this attack chain impossible.
 
-20. **What this maps to.** TanStack, May 2026. Same shape. Real attack, real packages, real consumers. Postmortem at `tanstack.com/blog/npm-supply-chain-compromise-postmortem`.
+19. **What this maps to.** TanStack, May 2026. Same shape. Real attack, real packages, real consumers. Postmortem at `tanstack.com/blog/npm-supply-chain-compromise-postmortem`.
 
 ---
 

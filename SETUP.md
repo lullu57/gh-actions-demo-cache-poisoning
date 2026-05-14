@@ -94,14 +94,20 @@ gh repo create gh-actions-demo-cache-poisoning --private --source=. --push
 
 (Or: create privately on GitHub UI, then `git remote add origin ... && git push -u origin main`.)
 
-## 6. (Optional) Set up the attacker fork
+## 6. Set up the attacker fork (required for the live demo)
 
-For the live demo, you'll want a *different* GitHub account to play the attacker. From that account:
+You need a **second GitHub account** — one that isn't the maintainer account. GitHub won't let an account fork its own repo, and the attack mechanic depends on the PR sitting in the "fork PR" trust slot (which is what makes `pull_request_target` interesting — it runs in base trust context and sees the maintainer's secrets). Any existing personal account works; a brand-new throwaway also works but new accounts sometimes get flagged on first PR.
 
-1. Click "Fork" on the published repo.
-2. Clone the fork locally.
+From the attacker account:
 
-You'll use this fork during the [DEMO-SCRIPT](DEMO-SCRIPT.md).
+1. Visit the maintainer repo on GitHub and click **Fork**. Keep the default name.
+2. Clone the fork locally to a separate path from the maintainer checkout:
+   ```bash
+   git clone https://github.com/<attacker-account>/gh-actions-demo-cache-poisoning /tmp/attacker-fork
+   ```
+3. The demo flow runs `attack/fork-changes/apply-attack.sh --push` from inside the fork checkout. It mints a fresh timestamped branch per run, so the same fork is reused across demos without PR-conflict pain.
+
+Re-fork only if you delete the fork or rotate to a new attacker account.
 
 ## 7. Verify
 
