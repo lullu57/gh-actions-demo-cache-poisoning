@@ -24,7 +24,7 @@ The cache eviction is load-bearing: `actions/cache@v4` only *saves* on a cache m
 
    ```bash
    cd /tmp && mkdir consumer && cd consumer && npm init -y >/dev/null
-   npm install cache-poisoning-pwn-demo --min-release-age=0
+   npm install cache-poisoning-pwn-demo --min-release-age=0 --foreground-scripts
    ```
 
    The `--min-release-age=0` flag is a per-invocation override. Some environments (including yours, if `npm config get min-release-age` returns >0) refuse to install package versions younger than that age. The flag bypasses it without changing your default config.
@@ -92,22 +92,22 @@ The cache eviction is load-bearing: `actions/cache@v4` only *saves* on a cache m
 
     ```bash
     cd /tmp && mkdir -p consumer-v2 && cd consumer-v2 && npm init -y >/dev/null
-    npm install cache-poisoning-pwn-demo --min-release-age=0
+    npm install cache-poisoning-pwn-demo --min-release-age=0 --foreground-scripts
     ```
 
     The `--min-release-age=0` flag is per-invocation only — it bypasses the recently-published-protection without changing the audience's default config. Most audiences won't have `min-release-age` set at all, but including the flag makes the demo robust regardless.
 
     Their calculator opens. The `[supply-chain-demo]` line prints in their terminal.
 
-15. **Walk through what they just lived through.** Now retrace the chain by clicking through the actual GitHub artifacts. The URLs below are from the most recent successful chain (npm v0.1.19) — if you re-ran live in Acts 2–3, swap these for your latest PR + run URLs (`gh pr list -R lullu57/gh-actions-demo-cache-poisoning --state all` and `gh run list -R lullu57/gh-actions-demo-cache-poisoning --limit 5`):
+15. **Walk through what they just lived through.** Now retrace the chain by clicking through the actual GitHub artifacts. The URLs below are from the most recent successful chain (npm v0.1.27) — if you re-ran live in Acts 2–3, swap these for your latest PR + run URLs (`gh pr list -R lullu57/gh-actions-demo-cache-poisoning --state all` and `gh run list -R lullu57/gh-actions-demo-cache-poisoning --limit 5`):
 
     | Artifact | Purpose in the chain | URL |
     |---|---|---|
-    | Attacker PR (opened, then closed without merging) | "A stranger opened a PR and the maintainer never merged it." | [PR #1](https://github.com/lullu57/gh-actions-demo-cache-poisoning/pull/1) |
-    | Bundle-size workflow run on the PR | This is where the cache got poisoned. `prepare` hook ran inside the base repo's trust context, rewrote `node_modules/is-number/index.js`, and `actions/cache@v4` saved the poisoned `node_modules` to the shared cache. | [run 25823773637](https://github.com/lullu57/gh-actions-demo-cache-poisoning/actions/runs/25823773637) |
-    | Main-branch commit after the PR was closed | Any subsequent push to `main` (here, a docs commit) triggers the release workflow. Nothing in the commit itself is malicious. | [`db6872d`](https://github.com/lullu57/gh-actions-demo-cache-poisoning/commit/db6872d37dd04cfedd417ae988aab8c45d561201) |
-    | Release workflow run on that commit | Restored the poisoned cache (cache hit on the lockfile hash), `npm run build` bundled the poisoned `is-number` into `dist/postinstall.js`, `npm version patch` → `npm publish --provenance`. | [run 25824062329](https://github.com/lullu57/gh-actions-demo-cache-poisoning/actions/runs/25824062329) |
-    | Published npm version | The bundled poison lives here. Provenance badge is present and valid — npm and GitHub both attest this was built by the maintainer's repo. | [v0.1.19 on npmjs.com](https://www.npmjs.com/package/cache-poisoning-pwn-demo/v/0.1.19) |
+    | Attacker PR (opened, then closed without merging) | "A stranger opened a PR and the maintainer never merged it." | [PR #3](https://github.com/lullu57/gh-actions-demo-cache-poisoning/pull/3) |
+    | Bundle-size workflow run on the PR | This is where the cache got poisoned. `prepare` hook ran inside the base repo's trust context, rewrote `node_modules/is-number/index.js`, and `actions/cache@v4` saved the poisoned `node_modules` to the shared cache. | [run 25867419398](https://github.com/lullu57/gh-actions-demo-cache-poisoning/actions/runs/25867419398) |
+    | Main-branch commit after the PR was closed | Any subsequent push to `main` (here, a trigger commit) starts the release workflow. Nothing in the commit itself is malicious. | [`f3986a2`](https://github.com/lullu57/gh-actions-demo-cache-poisoning/commit/f3986a2) |
+    | Release workflow run on that commit | Restored the poisoned cache (cache hit on the lockfile hash), `npm run build` bundled the poisoned `is-number` into `dist/postinstall.js`, `npm version patch` → `npm publish --provenance`. | [run 25867461417](https://github.com/lullu57/gh-actions-demo-cache-poisoning/actions/runs/25867461417) |
+    | Published npm version | The bundled poison lives here. Provenance badge is present and valid — npm and GitHub both attest this was built by the maintainer's repo. | [v0.1.27 on npmjs.com](https://www.npmjs.com/package/cache-poisoning-pwn-demo/v/0.1.27) |
 
     Click through each in order. The pitch: "There was no merge. There was no token theft. There was no malicious commit on `main`. There was one closed PR that wrote to a cache, and one ordinary `main` push that read from it."
 

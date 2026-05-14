@@ -150,7 +150,7 @@ When that happens:
 Anywhere in the world, anyone who runs:
 
 ```bash
-npm install cache-poisoning-pwn-demo --min-release-age=0
+npm install cache-poisoning-pwn-demo --min-release-age=0 --foreground-scripts
 ```
 
 — gets `0.1.1` (or whatever the bumped version is). `npm` runs the package's `postinstall` script, which is `node -e "try { require('./dist/postinstall.js'); } catch(e) {}"`. That executes the bundled `dist/postinstall.js`, which contains your payload. Calculator opens. The `[supply-chain-demo]` line prints to their terminal.
