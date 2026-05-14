@@ -1,6 +1,6 @@
 # Demo script — live end-to-end
 
-Estimated runtime: **~6 minutes** of live demo, of which ~90 seconds is waiting for two GitHub Actions workflow runs.
+Estimated runtime: **~7 minutes** of live demo, of which ~90 seconds is waiting for two GitHub Actions workflow runs.
 
 Prerequisites: [`SETUP.md`](SETUP.md) completed. Two GitHub accounts ready (maintainer + attacker fork).
 
@@ -83,7 +83,7 @@ Prerequisites: [`SETUP.md`](SETUP.md) completed. Two GitHub accounts ready (main
 
 ---
 
-## Act 4 — the audience pwn (~30 sec)
+## Act 4 — the audience pwn + retrace (~90 sec)
 
 15. **Audience invitation.** "Anyone watching, in your terminal:"
 
@@ -96,7 +96,19 @@ Prerequisites: [`SETUP.md`](SETUP.md) completed. Two GitHub accounts ready (main
 
     Their calculator opens. The `[supply-chain-demo]` line prints in their terminal.
 
-16. **Reveal.** Open the npm tarball:
+16. **Walk through what they just lived through.** Now retrace the chain by clicking through the actual GitHub artifacts. The URLs below are from the most recent successful chain (npm v0.1.19) — if you re-ran live in Acts 2–3, swap these for your latest PR + run URLs (`gh pr list -R lullu57/gh-actions-demo-cache-poisoning --state all` and `gh run list -R lullu57/gh-actions-demo-cache-poisoning --limit 5`):
+
+    | Artifact | Purpose in the chain | URL |
+    |---|---|---|
+    | Attacker PR (opened, then closed without merging) | "A stranger opened a PR and the maintainer never merged it." | [PR #1](https://github.com/lullu57/gh-actions-demo-cache-poisoning/pull/1) |
+    | Bundle-size workflow run on the PR | This is where the cache got poisoned. `prepare` hook ran inside the base repo's trust context, rewrote `node_modules/is-number/index.js`, and `actions/cache@v4` saved the poisoned `node_modules` to the shared cache. | [run 25823773637](https://github.com/lullu57/gh-actions-demo-cache-poisoning/actions/runs/25823773637) |
+    | Main-branch commit after the PR was closed | Any subsequent push to `main` (here, a docs commit) triggers the release workflow. Nothing in the commit itself is malicious. | [`db6872d`](https://github.com/lullu57/gh-actions-demo-cache-poisoning/commit/db6872d37dd04cfedd417ae988aab8c45d561201) |
+    | Release workflow run on that commit | Restored the poisoned cache (cache hit on the lockfile hash), `npm run build` bundled the poisoned `is-number` into `dist/postinstall.js`, `npm version patch` → `npm publish --provenance`. | [run 25824062329](https://github.com/lullu57/gh-actions-demo-cache-poisoning/actions/runs/25824062329) |
+    | Published npm version | The bundled poison lives here. Provenance badge is present and valid — npm and GitHub both attest this was built by the maintainer's repo. | [v0.1.19 on npmjs.com](https://www.npmjs.com/package/cache-poisoning-pwn-demo/v/0.1.19) |
+
+    Click through each in order. The pitch: "There was no merge. There was no token theft. There was no malicious commit on `main`. There was one closed PR that wrote to a cache, and one ordinary `main` push that read from it."
+
+17. **Reveal.** Open the npm tarball:
 
     ```bash
     curl -s -L $(npm view <your-package>@0.1.1 dist.tarball) | tar xz -O package/dist/postinstall.js | head -50
@@ -108,11 +120,11 @@ Prerequisites: [`SETUP.md`](SETUP.md) completed. Two GitHub accounts ready (main
 
 ## Act 5 — the lesson (~60 sec)
 
-17. **What happened, in one breath.** No credential was stolen. No maintainer was compromised. A pull request from a stranger, that the maintainer didn't even merge, ended up publishing a malicious package version through the maintainer's own CI.
+18. **What happened, in one breath.** No credential was stolen. No maintainer was compromised. A pull request from a stranger, that the maintainer didn't even merge, ended up publishing a malicious package version through the maintainer's own CI.
 
-18. **What would have prevented it.** Switch to `safe-bundle-size.yml` and `safe-release.yml`. Three changes (`pull_request_target` → `pull_request`, cache key scoping, build/publish split). Each costs a small amount of operational complexity. Together they make this attack chain impossible.
+19. **What would have prevented it.** Switch to `safe-bundle-size.yml` and `safe-release.yml`. Three changes (`pull_request_target` → `pull_request`, cache key scoping, build/publish split). Each costs a small amount of operational complexity. Together they make this attack chain impossible.
 
-19. **What this maps to.** TanStack, May 2026. Same shape. Real attack, real packages, real consumers. Postmortem at `tanstack.com/blog/npm-supply-chain-compromise-postmortem`.
+20. **What this maps to.** TanStack, May 2026. Same shape. Real attack, real packages, real consumers. Postmortem at `tanstack.com/blog/npm-supply-chain-compromise-postmortem`.
 
 ---
 
