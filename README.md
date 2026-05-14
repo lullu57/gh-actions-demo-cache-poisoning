@@ -18,7 +18,7 @@ Reading the TanStack postmortem communicates the *shape* of the attack; running 
 
 The package on npm is real. Installing it triggers the educational payload — it opens Calculator and prints a marker. It does not exfiltrate, persist, or do anything else. It is not a typosquat; the name is intentionally demo-flagged. If you maintain an npm package built with Actions, [`fix/README.md`](fix/README.md) has the three workflow changes that make this attack class structurally impossible. If you consume npm packages in CI, set `npm config set min-release-age 7` (see [below](#consumer-side-mitigation)).
 
-## The attack in one diagram
+## The attack in one diagram 
 
 ```
 Attacker fork PR (or any same-repo branch from a write-access account)
